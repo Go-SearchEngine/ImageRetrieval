@@ -19,6 +19,7 @@ from cirtorch.networks.imageretrievalnet import init_network
 app = Flask(__name__)
 
 
+# the entrance of the flask
 @app.route("/image", methods=['POST'])
 def accInsurance():
     try:
@@ -52,11 +53,12 @@ def accInsurance():
         data['results'] = results
 
         return json.dumps({'err': 0, 'msg': 'success', 'data': data})
-    except:
+    except Exception as e:
         app.logger.exception(sys.exc_info())
-        return json.dumps({'err': 1, 'msg': 'Unknown error'})
+        return json.dumps({'err': 1, 'msg': e})
 
 
+# Get the image encoded by Base64
 def get_response_image(image_path):
     pil_image = Image.open(image_path, mode='r').convert("RGB")
     byte_arr = io.BytesIO()
@@ -65,17 +67,21 @@ def get_response_image(image_path):
     return encoded_img
 
 
+# Compute the cosine relativity
 def cosine_dist(x, y):
     return 100 * float(np.dot(x, y)) / (np.dot(x, x) * np.dot(y, y)) ** 0.5
 
 
+# Inference from ResNet-50
 def inference(img):
     try:
+        # Preprocess the image
         input = Image.open(img).convert("RGB")
         input = imresize(input, 224)
         input = transforms(input).unsqueeze(0)
         if torch.cuda.is_available():
             input = input.cuda()
+        # Perform the prediction
         with torch.no_grad():
             vect = net(input)
         return vect
@@ -83,6 +89,7 @@ def inference(img):
         print(e)
 
 
+# Use LSH to Query the similar image
 def retrieval(img):
     # load model
     query_vect = inference(img)
@@ -90,11 +97,13 @@ def retrieval(img):
     query_vect = list(query_vect.detach().numpy().T[0])
 
     # LSH Query
+    # In order to speed up the reaction, we just get 3 of the most similar image
     response = lsh.query(query_vect, num_results=3, distance_func="cosine")
     try:
         results = []
         for i in range(3):
             similar_path = response[i][0][1]
+            # compute the relativity of the query image and the result image
             score = np.rint(cosine_dist(list(query_vect), list(response[i][0][0])))
             result = {"score": score, "image": get_response_image(similar_path)}
             results.append(result)
@@ -124,8 +133,6 @@ def init_model(network):
     # network initialization
     net = init_network(net_params)
     net.load_state_dict(state['state_dict'])
-    print(">>>> loaded network: ")
-    print(net.meta_repr())
     # moving network to gpu and eval mode
     if torch.cuda.is_available():
         net.cuda()
@@ -165,4 +172,3 @@ if __name__ == "__main__":
     host, port, net, lsh, transforms = init()
     app.run(host=host, port=port, debug=True)
     print("start server {}:{}".format(host, port))
-

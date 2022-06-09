@@ -40,10 +40,9 @@ class AntiFraudFeatureDataset:
         self.feature_path = feature_path
         self.index_path = index_path
 
-    def construct_feature(self, hash_size, input_dim, num_hashtables):
+    def construct_feature(self, hash_size, input_dim, num_hash_tables):
         multiscale = '[1]'
         print(">> Loading network:\n>>>> '{}'".format(self.network))
-        # state = load_url(PRETRAINED[args.network], model_dir=os.path.join(get_data_root(), 'networks'))
         state = torch.load(self.network)
         # parsing net params from meta
         # architecture, pooling, mean, std required
@@ -61,8 +60,6 @@ class AntiFraudFeatureDataset:
         # network initialization
         net = init_network(net_params)
         net.load_state_dict(state['state_dict'])
-        print(">>>> loaded network: ")
-        print(net.meta_repr())
         # setting up the multi-scale parameters
         ms = list(eval(multiscale))
         print(">>>> Evaluating scales: {}".format(ms))
@@ -88,7 +85,7 @@ class AntiFraudFeatureDataset:
         img_paths = [b for a in img_paths for b in a]
         feature_dict = dict(zip(img_paths, list(vecs.detach().cpu().numpy().T)))
         # index
-        lsh = LSHash(hash_size=int(hash_size), input_dim=int(input_dim), num_hashtables=int(num_hashtables))
+        lsh = LSHash(hash_size=int(hash_size), input_dim=int(input_dim), num_hashtables=int(num_hash_tables))
         for img_path, vec in feature_dict.items():
             lsh.index(vec.flatten(), extra_data=img_path)
 
@@ -100,51 +97,3 @@ class AntiFraudFeatureDataset:
 
         print("extract feature is done")
         return feature_dict, lsh
-
-    def test_feature(self):
-        multiscale = '[1]'
-        print(">> Loading network:\n>>>> '{}'".format(self.network))
-        # state = load_url(PRETRAINED[args.network], model_dir=os.path.join(get_data_root(), 'networks'))
-        state = torch.load(self.network)
-        # parsing net params from meta
-        # architecture, pooling, mean, std required
-        # the rest has default values, in case that is doesnt exist
-        net_params = {'architecture': state['meta']['architecture'],
-                      'pooling': state['meta']['pooling'],
-                      'local_whitening': state['meta'].get('local_whitening', False),
-                      'regional': state['meta'].get('regional', False),
-                      'whitening': state['meta'].get('whitening', False),
-                      'mean': state['meta']['mean'],
-                      'std': state['meta']['std'],
-                      'pretrained': False
-                      }
-        # network initialization
-        net = init_network(net_params)
-        net.load_state_dict(state['state_dict'])
-        print(">>>> loaded network: ")
-        print(net.meta_repr())
-        # setting up the multi-scale parameters
-        ms = list(eval(multiscale))
-        print(">>>> Evaluating scales: {}".format(ms))
-        # moving network to gpu and eval mode
-        if torch.cuda.is_available():
-            net.cuda()
-        net.eval()
-
-        # set up the transform
-        normalize = transforms.Normalize(
-            mean=net.meta['mean'],
-            std=net.meta['std']
-        )
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            normalize
-        ])
-
-        # extract database and query vectors
-        print('>> database images...')
-        images = ImageProcess(self.img_dir).process()
-        vecs, img_paths = extract_vectors(net, images, 1024, transform, ms=ms)
-        img_paths = [b for a in img_paths for b in a]
-        feature_dict = dict(zip(img_paths, list(vecs.detach().cpu().numpy().T)))
-        return feature_dict
